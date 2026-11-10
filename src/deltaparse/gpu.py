@@ -1,19 +1,23 @@
 """Nemotron-3.5-Parse on Modal H100 with vLLM (NVIDIA reference MTP serving profile).
 
-Usage:
-    modal run parse_vllm.py --path some.pdf
-    modal run parse_vllm.py --path "C:/folder/with/pdfs" --out-dir out_vllm --limit 20
+Usage (needs `pip install -e ".[gpu]"` and `modal setup`):
+    deltaparse gpu some.pdf
+    deltaparse gpu "C:/folder/with/pdfs" --out-dir out_vllm --limit 20
+or directly:
+    modal run -m deltaparse.gpu --path some.pdf
 
 One H100 container runs `vllm serve` plus the repo's DocumentParser batch client
 (up to 192 requests in flight). PDFs are uploaded as-is in batches of ~400 pages and
 rendered on the container CPUs (blank pages skipped), so the GPU stays saturated. Per PDF it writes <name>.md, <name>.json and <name>.html (viewer).
 """
-import json
 import subprocess
 import time
 from pathlib import Path
 
 import modal
+
+from deltaparse.output import unique_stem, write_outputs
+from deltaparse.pdf import batch_by_pages, collect_pdfs, render_pdf
 
 MODEL_ID = "nvidia/Nemotron-3.5-Parse"
 MODEL_DIR = "/model"
@@ -38,6 +42,7 @@ image = (
         "pip check || true",
     )
     .pip_install("pymupdf==1.27.2.3")
+    .add_local_python_source("deltaparse")  # our package (render_pdf) inside the container
 )
 
 vllm_cache = modal.Volume.from_name("nemotron-parse-vllm-cache", create_if_missing=True)
@@ -148,64 +153,14 @@ class VllmParser:
         return {"pdfs": rendered, "metrics": metrics}
 
 
-def render_pdf(data: bytes, dpi: int) -> list[dict]:
-    """Per page: png at `dpi` for the model (None if blank) + 100 dpi jpg for the viewer."""
-    import numpy as np
-    import pymupdf
-
-    pages = []
-    with pymupdf.open(stream=data, filetype="pdf") as pdf:
-        for page in pdf:
-            pix = page.get_pixmap(dpi=dpi, colorspace=pymupdf.csRGB, alpha=False)
-            gray = np.frombuffer(pymupdf.Pixmap(pymupdf.csGRAY, pix).samples, dtype=np.uint8)
-            blank = bool((gray < 200).mean() < 0.00002)  # model loops on blank pages
-            view = page.get_pixmap(dpi=100, colorspace=pymupdf.csRGB, alpha=False)
-            pages.append({
-                "png": None if blank else pix.tobytes("png"),
-                "jpg": view.tobytes("jpeg", jpg_quality=75),
-                "blank": blank, "markdown": "", "blocks": [], "complete": True,
-            })
-    return pages
-
-
 # ---------------------------------------------------------------- local side
-
-
-def collect_pdfs(path: Path, limit: int) -> list[Path]:
-    if path.is_dir():
-        files = sorted(p for p in path.rglob("*") if p.suffix.lower() == ".pdf")
-        return files[:limit] if limit else files
-    return [path]
-
-
-def batch_by_pages(pdfs: list[Path], target: int) -> list[list[Path]]:
-    import pymupdf
-
-    batches, cur, n = [], [], 0
-    for pdf in pdfs:
-        try:
-            with pymupdf.open(str(pdf)) as d:
-                count = d.page_count
-        except Exception as e:  # noqa: BLE001
-            print(f"skip unreadable {pdf.name}: {e}")
-            continue
-        cur.append(pdf)
-        n += count
-        if n >= target:
-            batches.append(cur)
-            cur, n = [], 0
-    if cur:
-        batches.append(cur)
-    return batches
 
 
 @app.local_entrypoint()
 def main(path: str, out_dir: str = "out_vllm", mode: str = "single", limit: int = 0,
          dpi: int = 150, batch_pages: int = 400):
-    from viewer import build_html
-
     out = Path(out_dir)
-    out.mkdir(exist_ok=True)
+    out.mkdir(parents=True, exist_ok=True)
     pdfs = collect_pdfs(Path(path), limit)
     batches = batch_by_pages(pdfs, batch_pages)
     mb = sum(p.stat().st_size for b in batches for p in b) / 1e6
@@ -225,18 +180,7 @@ def main(path: str, out_dir: str = "out_vllm", mode: str = "single", limit: int 
               f"GPU {m.get('processed_pages_per_second', 0):.1f} pages/s, "
               f"incomplete {m.get('incomplete_pages', 0)}, elapsed {time.time() - t0:.0f}s")
         for src, pages in zip(batch, res["pdfs"]):
-            stem = src.stem
-            while stem in used:  # same file name in different folders
-                stem += "_"
-            used.add(stem)
-            combined = [{"page": i, **pg} for i, pg in enumerate(pages)]
-            md = "\n\n".join(f"<!-- page {p['page'] + 1} -->\n\n{p['markdown']}" for p in combined)
-            (out / f"{stem}.md").write_text(md, encoding="utf-8")
-            meta = [{k2: v for k2, v in p.items() if k2 != "jpg"} for p in combined]
-            (out / f"{stem}.json").write_text(
-                json.dumps({"source": str(src), "pages": meta}, indent=2, ensure_ascii=False, default=str),
-                encoding="utf-8")
-            (out / f"{stem}.html").write_text(build_html(src.name, combined), encoding="utf-8")
+            write_outputs(out, unique_stem(src, used), src, pages, title=src.name)
     wall = time.time() - t0
     print(f"done: {total_pages} pages ({parsed} parsed) in {wall:.0f}s = "
           f"{total_pages / max(wall, 1e-9):.1f} pages/s end-to-end (incl. cold start) -> {out}/")

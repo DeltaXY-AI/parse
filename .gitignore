@@ -10,4 +10,10 @@ __pycache__/
 out*/
 preview/
 *.log
-tough_report.csv
+
+# local environments and build files
+.venv/
+*.egg-info/
+build/
+dist/
+.pytest_cache/

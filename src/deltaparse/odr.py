@@ -1,16 +1,15 @@
 """Parse PDFs through the OpenDocRouter hosted API (default model: Nemotron 3.5 Parse).
 
-Same outputs as parse_vllm.py: <stem>.md, <stem>.json, <stem>.html (side-by-side viewer).
+Same outputs as the GPU backend: <stem>.md, <stem>.json, <stem>.html (side-by-side viewer).
 No GPU of our own: OpenDocRouter runs the model, bills per page, failed pages are free.
 
-    python parse_odr.py <pdf-or-folder> [--out-dir out_odr] [--model nvidia/nemotron-3.5-parse]
-                        [--limit N] [--workers 8]
+    deltaparse odr <pdf-or-folder> [--out-dir out_odr] [--model nvidia/nemotron-3.5-parse]
+                   [--limit N] [--workers 8]
 
-Needs OPEN_DOC_ROUTER_API_KEY in the environment or in .env next to this file.
+Needs OPEN_DOC_ROUTER_API_KEY in the environment or in a .env file in the current folder.
 """
 import argparse
 import base64
-import json
 import os
 import time
 from concurrent.futures import ThreadPoolExecutor, as_completed
@@ -18,8 +17,8 @@ from pathlib import Path
 
 import httpx
 
-from parse_vllm import collect_pdfs, render_pdf
-from viewer import build_html
+from deltaparse.output import unique_stem, write_outputs
+from deltaparse.pdf import collect_pdfs, render_pdf
 
 API = "https://www.opendocrouter.ai/v1"
 INLINE_MAX = 2_800_000  # inline base64 limit is about 3 MB
@@ -34,9 +33,8 @@ CLASS = {
 }
 
 
-def api_key() -> str:
+def api_key(env: Path = Path(".env")) -> str:
     key = os.environ.get("OPEN_DOC_ROUTER_API_KEY")
-    env = Path(__file__).with_name(".env")
     if not key and env.exists():
         for line in env.read_text().splitlines():
             if line.startswith("OPEN_DOC_ROUTER_API_KEY="):
@@ -151,17 +149,17 @@ def parse_one(client: httpx.Client, src: Path, model: str) -> tuple[list[dict], 
     return pages, cost, stats
 
 
-def main():
-    ap = argparse.ArgumentParser()
-    ap.add_argument("path")
+def add_args(ap: argparse.ArgumentParser) -> None:
+    ap.add_argument("path", help="a PDF or a folder of PDFs")
     ap.add_argument("--out-dir", default="out_odr")
     ap.add_argument("--model", default="nvidia/nemotron-3.5-parse")
-    ap.add_argument("--limit", type=int, default=0)
+    ap.add_argument("--limit", type=int, default=0, help="parse at most N PDFs (0 = all)")
     ap.add_argument("--workers", type=int, default=8)
-    a = ap.parse_args()
 
+
+def run(a: argparse.Namespace) -> None:
     out = Path(a.out_dir)
-    out.mkdir(exist_ok=True)
+    out.mkdir(parents=True, exist_ok=True)
     pdfs = collect_pdfs(Path(a.path), a.limit)
     client = httpx.Client(headers={"Authorization": f"Bearer {api_key()}"}, timeout=600)
     credits = request(client, "GET", f"{API}/credits")
@@ -183,19 +181,8 @@ def main():
             total["cost"] += cost
             for k, v in st["errors"].items():
                 total["errors"][k] = total["errors"].get(k, 0) + v
-            stem = src.stem
-            while stem in used:
-                stem += "_"
-            used.add(stem)
-            combined = [{"page": i, **pg} for i, pg in enumerate(pages)]
-            md = "\n\n".join(f"<!-- page {p['page'] + 1} -->\n\n{p['markdown']}" for p in combined)
-            (out / f"{stem}.md").write_text(md, encoding="utf-8")
-            meta = [{k: v for k, v in p.items() if k != "jpg"} for p in combined]
-            (out / f"{stem}.json").write_text(
-                json.dumps({"source": str(src), "model": a.model, "pages": meta},
-                           indent=2, ensure_ascii=False), encoding="utf-8")
-            (out / f"{stem}.html").write_text(build_html(f"{src.name} ({a.model})", combined),
-                                              encoding="utf-8")
+            write_outputs(out, unique_stem(src, used), src, pages,
+                          title=f"{src.name} ({a.model})", extra={"model": a.model})
             print(f"{src.name}: {st['pages']} pages, {st['blank']} blank, {st['failed']} failed "
                   f"{st['errors'] or ''} ${cost:.4f}  [{time.time() - t0:.0f}s]")
 
@@ -205,6 +192,12 @@ def main():
     print(f"done: {total['pages']} pages ({total['blank']} blank, {total['failed']} failed "
           f"{total['errors'] or ''}) in {wall:.0f}s = {total['pages'] / max(wall, 1e-9):.1f} pages/s, "
           f"cost ${total['cost']:.4f} (${per_k:.2f} per 1k parsed pages) -> {out}/")
+
+
+def main(argv: list[str] | None = None) -> None:
+    ap = argparse.ArgumentParser(description="Parse PDFs through the OpenDocRouter hosted API.")
+    add_args(ap)
+    run(ap.parse_args(argv))
 
 
 if __name__ == "__main__":
