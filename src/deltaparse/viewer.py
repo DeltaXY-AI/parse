@@ -8,6 +8,7 @@ import base64
 import html
 import json
 import re
+from pathlib import Path
 
 COLORS = {
     "Title": "#d62728", "Section-header": "#ff7f0e", "Text": "#1f77b4",
@@ -131,18 +132,28 @@ def build_html(title: str, pages: list[dict]) -> str:
     return "".join(parts)
 
 
-if __name__ == "__main__":
-    # Rebuild a viewer from an existing combined JSON + source PDF:
-    #   python viewer.py out/doc.json path/to/doc.pdf
-    import sys
-    from pathlib import Path
-
+def rebuild(json_path: Path, pdf_path: Path) -> Path:
+    """Rebuild <json>.html from a saved combined JSON file and its source PDF."""
     import pymupdf
 
-    data = json.loads(Path(sys.argv[1]).read_text(encoding="utf-8"))
-    with pymupdf.open(sys.argv[2]) as pdf:
+    data = json.loads(json_path.read_text(encoding="utf-8"))
+    with pymupdf.open(str(pdf_path)) as pdf:
         for p in data["pages"]:
             p["jpg"] = pdf[p["page"]].get_pixmap(dpi=100).tobytes("jpeg", jpg_quality=75)
-    out = Path(sys.argv[1]).with_suffix(".html")
+    out = json_path.with_suffix(".html")
     out.write_text(build_html(data["source"], data["pages"]), encoding="utf-8")
-    print(f"wrote {out}")
+    return out
+
+
+def main(argv: list[str] | None = None) -> None:
+    import argparse
+
+    ap = argparse.ArgumentParser(description="Rebuild the HTML viewer from a saved JSON file.")
+    ap.add_argument("json", type=Path, help="<name>.json written by a backend")
+    ap.add_argument("pdf", type=Path, help="the source PDF")
+    a = ap.parse_args(argv)
+    print(f"wrote {rebuild(a.json, a.pdf)}")
+
+
+if __name__ == "__main__":
+    main()

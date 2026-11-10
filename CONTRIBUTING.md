@@ -12,8 +12,9 @@ Thanks for helping. Parse aims to bring the best OCR to everyone, and contributi
 
 1. Fork the repository and create a branch.
 2. Make your change and run it on a real document. Include the command and result in the pull request.
-3. No emoji in code or output: Parse runs on Windows terminals too.
-4. Open a pull request that describes what changed and why.
+3. Run the tests: `pip install -e ".[dev]"`, then `pytest`. They need no network, GPU or API key.
+4. No emoji in code or output: Parse runs on Windows terminals too.
+5. Open a pull request that describes what changed and why.
 
 ## Sign your commits (DCO)
 
