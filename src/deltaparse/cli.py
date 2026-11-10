@@ -26,6 +26,13 @@ def _deploy(a: argparse.Namespace) -> int:
     return subprocess.call(cmd)
 
 
+def _serve(a: argparse.Namespace) -> int:
+    # Chunkr-compatible API on this machine's GPU, no Modal (what the Docker image runs).
+    from deltaparse.selfhost import serve
+
+    return serve(a.host, a.port)
+
+
 def _modal_dict(name: str):
     import modal
 
@@ -106,6 +113,11 @@ def build_parser() -> argparse.ArgumentParser:
 
     p = sub.add_parser("deploy", help="deploy the Chunkr-compatible API to your Modal account")
     p.set_defaults(func=_deploy)
+
+    p = sub.add_parser("serve", help="run the Chunkr-compatible API on this machine's GPU (Docker image)")
+    p.add_argument("--host", default="0.0.0.0")
+    p.add_argument("--port", type=int, default=8000)
+    p.set_defaults(func=_serve)
 
     p = sub.add_parser("keys", help="add, list or revoke customer API keys on a hosted deployment")
     p.add_argument("action", choices=["add", "list", "revoke"])

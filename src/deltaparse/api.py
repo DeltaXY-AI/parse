@@ -17,7 +17,6 @@ Optional default retention: add DELTAPARSE_DEFAULT_EXPIRES_IN=<seconds> to the s
 an hourly sweep removes expired tasks.
 """
 import os
-from datetime import datetime, timezone
 
 import modal
 
@@ -37,42 +36,16 @@ app = modal.App("deltaparse")
 app.include(gpu.app)  # the H100 VllmParser class
 
 
-def _now() -> str:
-    return datetime.now(timezone.utc).isoformat()
-
-
 @app.function(image=api_image, timeout=3600, retries=0)
 def process_task(task_id: str, pdf: bytes, file_name: str, config: dict) -> None:
     """Parse one PDF on the H100 and store the Chunkr output in the task record."""
-    from deltaparse.chunkr import build_output
+    from deltaparse.server import run_task
 
-    tasks = modal.Dict.from_name(TASKS, create_if_missing=True)
-    rec = tasks.get(task_id)
-    if rec is None or rec["status"] == "Cancelled":
-        return
-    rec.update(status="Processing", message="Task is being processed", started_at=_now())
-    tasks[task_id] = rec
-    try:
-        res = gpu.VllmParser().parse_pdfs.remote([pdf], mode="single", dpi=150)
-        pages = [{k: v for k, v in p.items() if k != "jpg"} for p in res["pdfs"][0]]
-        incomplete = sum(1 for p in pages if not p["complete"])
-        output = build_output(pages, file_name, config)
-        status, message = "Succeeded", "Task succeeded"
-        if incomplete:
-            message = f"Task succeeded; {incomplete} page(s) incomplete"
-            if config.get("error_handling", "Fail") == "Fail" and incomplete == len(pages):
-                status, message = "Failed", "no page could be parsed"
-    except Exception as e:  # noqa: BLE001
-        output, status, message, pages = None, "Failed", f"parse failed: {e}"[:500], []
-    rec = tasks.get(task_id) or rec
-    if rec["status"] == "Cancelled":
-        return
-    rec.update(status=status, message=message, output=output, page_count=len(pages) or None,
-               finished_at=_now())
-    tasks[task_id] = rec
-    from deltaparse.keys import record_usage
+    def parse(data: bytes) -> list[dict]:
+        return gpu.VllmParser().parse_pdfs.remote([data], mode="single", dpi=150)["pdfs"][0]
 
-    record_usage(modal.Dict.from_name(USAGE, create_if_missing=True), rec)
+    run_task(modal.Dict.from_name(TASKS, create_if_missing=True), task_id, pdf, file_name, config,
+             parse, usage=modal.Dict.from_name(USAGE, create_if_missing=True))
 
 
 @app.function(image=api_image, schedule=modal.Period(hours=1))

@@ -10,18 +10,18 @@ One H100 container runs `vllm serve` plus the repo's DocumentParser batch client
 (up to 192 requests in flight). PDFs are uploaded as-is in batches of ~400 pages and
 rendered on the container CPUs (blank pages skipped), so the GPU stays saturated. Per PDF it writes <name>.md, <name>.json and <name>.html (viewer).
 """
-import subprocess
 import time
 from pathlib import Path
 
 import modal
 
+from deltaparse import engine
 from deltaparse.output import unique_stem, write_outputs
-from deltaparse.pdf import batch_by_pages, collect_pdfs, render_pdf
+from deltaparse.pdf import batch_by_pages, collect_pdfs
 
-MODEL_ID = "nvidia/Nemotron-3.5-Parse"
+MODEL_ID = engine.MODEL_ID
 MODEL_DIR = "/model"
-PORT = 8000
+PORT = engine.PORT
 
 
 def download_model():
@@ -67,41 +67,8 @@ class VllmParser:
             print("vLLM failed to start:", self.error)
 
     def _start(self):
-        import httpx
-
-        t = time.time()
-        cmd = [
-            "vllm", "serve", MODEL_DIR,
-            "--served-model-name", "nemotron-parse",
-            "--trust-remote-code",
-            "--dtype", "bfloat16",
-            "--distributed-executor-backend", "uni",
-            "--tensor-parallel-size", "1",
-            "--data-parallel-size", "1",
-            "--max-model-len", "16384",
-            "--max-num-seqs", "192",
-            "--max-num-batched-tokens", "16384",
-            "--no-enable-prefix-caching",
-            "--limit-mm-per-prompt", '{"image":1}',
-            "--attention-config", '{"flash_attn_version":3}',
-            "--chat-template", f"{MODEL_DIR}/chat_template.jinja",
-            "--host", "127.0.0.1", "--port", str(PORT),
-        ]
-        self.proc = subprocess.Popen(cmd)
-        while True:
-            if time.time() - t > 900:
-                self.proc.kill()
-                raise RuntimeError("vllm serve not healthy after 15 min")
-            if self.proc.poll() is not None:
-                raise RuntimeError(f"vllm serve exited with {self.proc.returncode}")
-            try:
-                if httpx.get(f"http://127.0.0.1:{PORT}/health", timeout=2).status_code == 200:
-                    break
-            except httpx.HTTPError:
-                pass
-            time.sleep(2)
+        self.proc = engine.start_vllm(MODEL_DIR, PORT)
         vllm_cache.commit()
-        print(f"vLLM ready in {time.time() - t:.0f}s")
 
     @modal.exit()
     def stop(self):
@@ -110,47 +77,10 @@ class VllmParser:
 
     @modal.method()
     def parse_pdfs(self, pdfs: list[bytes], mode: str = "single", dpi: int = 150) -> dict:
-        """Render PDFs on the container CPUs, parse all non-blank pages in one batch.
-
-        Returns {"pdfs": [[page, ...] per pdf], "metrics": {...}};
-        page = {jpg, blank, markdown, blocks, complete}.
-        """
-        import io
-        import sys
-        from concurrent.futures import ProcessPoolExecutor
-
-        from PIL import Image
-
+        """See deltaparse.engine.parse_pdfs."""
         if self.error:
             raise RuntimeError("vLLM server failed to start: " + self.error)
-        sys.path.insert(0, MODEL_DIR)
-        from nemotron_parse.inference import DocumentParser
-
-        t = time.time()
-        with ProcessPoolExecutor(8) as pool:
-            rendered = list(pool.map(render_pdf, pdfs, [dpi] * len(pdfs)))
-        render_s = time.time() - t
-        jobs = [(d, i) for d, pages in enumerate(rendered) for i, pg in enumerate(pages) if pg["png"]]
-        images = [Image.open(io.BytesIO(rendered[d][i]["png"])).convert("RGB") for d, i in jobs]
-
-        metrics = {}
-        if images:
-            with DocumentParser(f"http://127.0.0.1:{PORT}/v1", "nemotron-parse") as parser:
-                result = parser.parse_prepared(
-                    parser.prepare(images), mode=mode, concurrency=192,
-                    postprocess_workers=8, allow_partial=True,
-                )
-            metrics = result.metrics
-            for (d, i), doc in zip(jobs, result.documents):
-                rendered[d][i].update(
-                    markdown=doc.get("markdown", ""), blocks=doc.get("blocks", []),
-                    complete=doc.get("complete", doc.get("incomplete") is not True),
-                )
-        for pages in rendered:
-            for pg in pages:
-                pg.pop("png", None)
-        metrics["render_seconds"] = round(render_s, 1)
-        return {"pdfs": rendered, "metrics": metrics}
+        return engine.parse_pdfs(pdfs, mode=mode, dpi=dpi, model_dir=MODEL_DIR, port=PORT)
 
 
 # ---------------------------------------------------------------- local side

@@ -2,7 +2,7 @@
 
 Chunkr's hosted API shuts down on **November 15, 2026**. Your Chunkr API key will not work anywhere else, and your documents and task outputs are not migrated. Download any outputs you need before then. Source: [Chunkr's FAQ](https://docs.chunkr.ai/pages/migrate-to-extend/faq).
 
-Parse gives you a Chunkr-compatible API on **your own** Modal account. It runs NVIDIA Nemotron 3.5 Parse on an H100 and scales to zero when idle. Your code keeps using Chunkr's own Python client. Only the base URL and the key change.
+Parse gives you a Chunkr-compatible API on **your own** Modal account. It runs NVIDIA Nemotron 3.5 Parse on an H100 and scales to zero when idle. To run it in your own cloud or data center instead, use the Docker image ([below](#run-it-on-your-own-gpu-with-docker)). Your code keeps using Chunkr's own Python client. Only the base URL and the key change.
 
 ## 1. Deploy (about 5 minutes)
 
@@ -29,6 +29,18 @@ The last command prints your API URL, in this form:
 └── ✓ Created Function web
     └── https://<your-workspace>--deltaparse.us-east.modal.run
 ```
+
+### Run it on your own GPU with Docker
+
+If you would rather not use Modal, build the image and run it on a machine with an H100 (or H200) and the NVIDIA Container Toolkit:
+
+```bash
+docker build -t deltaparse .
+docker run -d --name deltaparse --gpus all -p 8000:8000   -e DELTAPARSE_API_KEY=<your key> -v deltaparse-data:/data deltaparse
+curl http://localhost:8000/ready        # {"ready":true} after about 2 minutes
+```
+
+Your API URL is then `http://<host>:8000`. Use it in step 2 in place of the Modal URL. [docs/docker.md](docker.md) covers requirements, settings and HTTPS.
 
 ## 2. Point your Chunkr code at it
 

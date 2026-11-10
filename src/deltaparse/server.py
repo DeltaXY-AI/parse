@@ -69,6 +69,41 @@ def to_pdf(data: bytes) -> bytes:
     raise HTTPException(400, "unsupported file type: send a PDF or an image (PNG, JPEG, TIFF, GIF, BMP, WebP)")
 
 
+def run_task(store: MutableMapping, task_id: str, pdf: bytes, file_name: str, config: dict,
+             parse, usage: MutableMapping | None = None) -> None:
+    """Parse one PDF and store the Chunkr output in the task record.
+
+    parse(pdf) -> pages, as returned per PDF by deltaparse.engine.parse_pdfs.
+    """
+    from deltaparse.chunkr import build_output
+    from deltaparse.keys import record_usage
+
+    rec = store.get(task_id)
+    if rec is None or rec["status"] == "Cancelled":
+        return
+    rec.update(status="Processing", message="Task is being processed", started_at=now())
+    store[task_id] = rec
+    try:
+        pages = [{k: v for k, v in p.items() if k != "jpg"} for p in parse(pdf)]
+        incomplete = sum(1 for p in pages if not p["complete"])
+        output = build_output(pages, file_name, config)
+        status, message = "Succeeded", "Task succeeded"
+        if incomplete:
+            message = f"Task succeeded; {incomplete} page(s) incomplete"
+            if config.get("error_handling", "Fail") == "Fail" and incomplete == len(pages):
+                status, message = "Failed", "no page could be parsed"
+    except Exception as e:  # noqa: BLE001
+        output, status, message, pages = None, "Failed", f"parse failed: {e}"[:500], []
+    rec = store.get(task_id) or rec
+    if rec["status"] == "Cancelled":
+        return
+    rec.update(status=status, message=message, output=output, page_count=len(pages) or None,
+               finished_at=now())
+    store[task_id] = rec
+    if usage is not None:
+        record_usage(usage, rec)
+
+
 def sweep_expired(store: MutableMapping, at: datetime | None = None) -> int:
     """Remove tasks past their expires_at; returns how many were removed."""
     at = at or datetime.now(timezone.utc)
