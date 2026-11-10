@@ -45,6 +45,17 @@ modal secret create deltaparse-api-key DELTAPARSE_API_KEY=<a long random string>
 deltaparse deploy                 # prints https://<your-workspace>--deltaparse.us-east.modal.run
 ```
 
+To host it for other people, give each customer their own key. Each customer sees only their own tasks, and you can add or revoke keys without redeploying:
+
+```bash
+deltaparse keys add acme          # prints a new key for "acme", shown once
+deltaparse keys list
+deltaparse keys revoke acme
+deltaparse usage                  # tasks and pages parsed per customer
+```
+
+To delete tasks automatically, add `DELTAPARSE_DEFAULT_EXPIRES_IN=<seconds>` to the `deltaparse-api-key` secret. A request can still set its own `expires_in`, and an hourly job removes expired tasks.
+
 It serves both generations of Chunkr's Python client (`chunkr-ai` 0.3.x and 0.1.0aN). Point either one at the printed URL with your key, and your code does not change. The [migration guide](docs/migrate-from-chunkr.md) covers setup, the field mapping and the known gaps. [docs/chunkr_api_reference.md](docs/chunkr_api_reference.md) records Chunkr's API as it was before the shutdown.
 
 ## All commands
@@ -67,6 +78,7 @@ src/deltaparse/
   gpu.py       batch backend: Modal + vLLM on an H100, blank-page skipping, fail-fast startup
   api.py       Modal deployment of the Chunkr-compatible API
   server.py    the API itself (FastAPI): Chunkr's task routes, auth, file input
+  keys.py      per-customer API keys and usage for a hosted deployment
   chunkr.py    Nemotron blocks -> Chunkr segments and chunks
   odr.py       hosted backend (OpenDocRouter)
   pdf.py       find PDFs, render pages, detect blank pages

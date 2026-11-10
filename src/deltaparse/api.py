@@ -8,6 +8,13 @@ One-time setup, then deploy:
 
 Then point Chunkr code at it: CHUNKR_URL=<url> (v1 client) or CHUNKR_BASE_URL=<url> (v2 client),
 and CHUNKR_API_KEY=<the same random string>.
+
+Hosting for several customers (each sees only its own tasks):
+    deltaparse keys add <customer>      # prints a new key, shown once
+    deltaparse keys list | revoke <customer>
+    deltaparse usage                    # pages parsed per customer
+Optional default retention: add DELTAPARSE_DEFAULT_EXPIRES_IN=<seconds> to the secret;
+an hourly sweep removes expired tasks.
 """
 import os
 from datetime import datetime, timezone
@@ -17,6 +24,8 @@ import modal
 from deltaparse import gpu
 
 TASKS = "deltaparse-tasks"  # Modal Dict holding task status and output
+KEYS = "deltaparse-keys"    # Modal Dict: sha256(key) -> customer (see deltaparse.keys)
+USAGE = "deltaparse-usage"  # Modal Dict: task_id -> pages parsed, per customer
 
 api_image = (
     modal.Image.debian_slim(python_version="3.12")
@@ -61,6 +70,17 @@ def process_task(task_id: str, pdf: bytes, file_name: str, config: dict) -> None
     rec.update(status=status, message=message, output=output, page_count=len(pages) or None,
                finished_at=_now())
     tasks[task_id] = rec
+    from deltaparse.keys import record_usage
+
+    record_usage(modal.Dict.from_name(USAGE, create_if_missing=True), rec)
+
+
+@app.function(image=api_image, schedule=modal.Period(hours=1))
+def sweep() -> int:
+    """Remove expired tasks even if nobody reads them again."""
+    from deltaparse.server import sweep_expired
+
+    return sweep_expired(modal.Dict.from_name(TASKS, create_if_missing=True))
 
 
 class ModalRunner:
@@ -79,4 +99,7 @@ def web():
     from deltaparse.server import create_app
 
     store = modal.Dict.from_name(TASKS, create_if_missing=True)
-    return create_app(store, ModalRunner(), api_key=os.environ["DELTAPARSE_API_KEY"])
+    keys = modal.Dict.from_name(KEYS, create_if_missing=True)
+    expires = int(os.environ.get("DELTAPARSE_DEFAULT_EXPIRES_IN") or 0) or None
+    return create_app(store, ModalRunner(), api_key=os.environ["DELTAPARSE_API_KEY"], keys=keys,
+                      default_expires_in=expires)

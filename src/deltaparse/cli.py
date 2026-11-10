@@ -26,6 +26,53 @@ def _deploy(a: argparse.Namespace) -> int:
     return subprocess.call(cmd)
 
 
+def _modal_dict(name: str):
+    import modal
+
+    return modal.Dict.from_name(name, create_if_missing=True)
+
+
+def _keys(a: argparse.Namespace) -> int:
+    # Per-customer keys for a hosted deployment; changes apply without a redeploy.
+    from deltaparse import keys as K
+    from deltaparse.api import KEYS
+
+    if a.action != "list" and not a.customer:
+        print(f"usage: deltaparse keys {a.action} <customer>", file=sys.stderr)
+        return 2
+    store = _modal_dict(KEYS)
+    if a.action == "add":
+        try:
+            key = K.add_key(store, a.customer)
+        except ValueError as e:
+            print(e, file=sys.stderr)
+            return 2
+        print(f"new key for {a.customer} (shown once, store it now):")
+        print(key)
+    elif a.action == "revoke":
+        n = K.revoke(store, a.customer)
+        print(f"revoked {n} key(s) for {a.customer}")
+        return 0 if n else 1
+    else:
+        rows = K.list_customers(store)
+        for customer, n in rows.items():
+            print(f"{customer}	{n} key(s)")
+        if not rows:
+            print("no customer keys")
+    return 0
+
+
+def _usage(a: argparse.Namespace) -> int:
+    from deltaparse import keys as K
+    from deltaparse.api import USAGE
+
+    rows = K.usage_report(_modal_dict(USAGE))
+    print("customer	tasks	pages")
+    for customer, r in rows.items():
+        print(f"{customer}	{r['tasks']}	{r['pages']}")
+    return 0
+
+
 def _view(a: argparse.Namespace) -> None:
     from deltaparse.viewer import rebuild
 
@@ -59,6 +106,14 @@ def build_parser() -> argparse.ArgumentParser:
 
     p = sub.add_parser("deploy", help="deploy the Chunkr-compatible API to your Modal account")
     p.set_defaults(func=_deploy)
+
+    p = sub.add_parser("keys", help="add, list or revoke customer API keys on a hosted deployment")
+    p.add_argument("action", choices=["add", "list", "revoke"])
+    p.add_argument("customer", nargs="?", help="customer name (for add and revoke)")
+    p.set_defaults(func=_keys)
+
+    p = sub.add_parser("usage", help="pages parsed per customer on a hosted deployment")
+    p.set_defaults(func=_usage)
 
     p = sub.add_parser("view", help="rebuild the HTML viewer from a saved JSON file")
     p.add_argument("json", type=Path, help="<name>.json written by a backend")

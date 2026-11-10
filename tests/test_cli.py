@@ -31,4 +31,28 @@ def test_cli_requires_a_command(capsys):
 
 def test_cli_lists_only_current_commands():
     sub = next(a for a in cli.build_parser()._actions if a.dest == "command")
-    assert sorted(sub.choices) == ["deploy", "gpu", "odr", "sample", "view"]
+    assert sorted(sub.choices) == ["deploy", "gpu", "keys", "odr", "sample", "usage", "view"]
+
+
+def test_cli_keys_and_usage_use_the_hosted_stores(monkeypatch, capsys):
+    from deltaparse import keys as K
+
+    stores = {"deltaparse-keys": {}, "deltaparse-usage": {}}
+    monkeypatch.setattr(cli, "_modal_dict", lambda name: stores[name])
+    assert cli.main(["keys", "add", "acme"]) == 0
+    key = capsys.readouterr().out.strip().splitlines()[-1]
+    assert key.startswith("dp_") and K.customer_for(stores["deltaparse-keys"], key) == "acme"
+
+    assert cli.main(["keys", "list"]) == 0
+    assert "acme" in capsys.readouterr().out
+
+    K.record_usage(stores["deltaparse-usage"], {"task_id": "t", "owner": "acme", "status": "Succeeded",
+                                                "page_count": 7})
+    assert cli.main(["usage"]) == 0
+    out = capsys.readouterr().out
+    assert "acme" in out and "7" in out
+
+    assert cli.main(["keys", "revoke", "acme"]) == 0
+    assert stores["deltaparse-keys"] == {}
+    assert cli.main(["keys", "revoke", "acme"]) == 1  # nothing to revoke
+    assert cli.main(["keys", "add", "Bad Name"]) == 2
