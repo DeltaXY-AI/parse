@@ -1,0 +1,13 @@
+# secrets
+.env
+.env.*
+
+# python
+__pycache__/
+*.pyc
+
+# parsed outputs and previews (may contain private documents - never commit)
+out*/
+preview/
+*.log
+tough_report.csv

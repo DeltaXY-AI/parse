@@ -1,0 +1,20 @@
+Parse
+Copyright 2026 DeltaXY.AI
+
+This product is licensed under the Apache License, Version 2.0 (see LICENSE).
+
+Third-party models and software
+-------------------------------
+
+Parse calls or serves third-party models that are NOT covered by this
+project's license:
+
+* NVIDIA Nemotron 3.5 Parse (https://huggingface.co/nvidia/Nemotron-3.5-Parse)
+  Model weights: OpenMDW License 1.1. Tokenizer: MIT (Meta Nougat tokenizer),
+  see the model repository's TOKENIZER_ATTRIBUTION.md.
+  Copyright NVIDIA Corporation.
+
+* Models reached through OpenDocRouter (https://www.opendocrouter.ai) are
+  governed by their own licenses and by OpenDocRouter's terms of service.
+
+Users are responsible for complying with the license of each model they use.
