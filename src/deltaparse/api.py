@@ -1,4 +1,4 @@
-"""Deploy the Chunkr-compatible API to your own Modal account (H100 + vLLM, scales to zero).
+"""Deploy the Chunkr-compatible API to your own Modal account (H100 + vLLM; the GPU scales to zero).
 
 One-time setup, then deploy:
     pip install -e ".[gpu]"
@@ -64,8 +64,10 @@ class ModalRunner:
         modal.FunctionCall.from_id(call_id).cancel()
 
 
+# One small CPU container stays up (the H100 still scales to zero): a cold start takes about
+# 7.5 s, longer than the 5 s timeout of Chunkr's 0.3.x client on its upload call.
 @app.function(image=api_image, secrets=[modal.Secret.from_name("deltaparse-api-key")],
-              scaledown_window=300)
+              min_containers=1, scaledown_window=300)
 @modal.concurrent(max_inputs=100)
 @modal.asgi_app(label="deltaparse")
 def web():

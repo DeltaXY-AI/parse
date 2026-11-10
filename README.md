@@ -14,7 +14,7 @@ It is for developers who feed documents to search, RAG or LLM pipelines and want
 
 | | Command | When to use | Measured |
 |---|---|---|---|
-| **Chunkr-compatible API** on your Modal account (H100) | `deltaparse deploy` | Apps that call an API; Chunkr users | first call about 2.5 min (cold start), then 8 s for a one-page scan; scales to zero when idle |
+| **Chunkr-compatible API** on your Modal account (H100) | `deltaparse deploy` | Apps that call an API; Chunkr users | first call about 2.5 min (cold start), then 8 s for a one-page scan; the GPU shuts down when idle (about $5 a month idle cost) |
 | **Chunkr-compatible API** on your own GPU (Docker, H100) | `docker run --gpus all ...` | Your own cloud or data center | ready about 2 min after start, then 2 s for a one-page task ([docs/docker.md](docs/docker.md)) |
 | **Batch** on your own GPU (Modal + vLLM, H100) | `deltaparse gpu` | Bulk runs, private documents | 12.2 pages/s, about $0.15-0.35 per 1,000 pages, about 2.5 min startup |
 | **Hosted** (OpenDocRouter) | `deltaparse odr` | No GPU account, small jobs | 208 pages in 109 s, $1.09 per 1,000 pages, 0 failures |

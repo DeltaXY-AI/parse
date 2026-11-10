@@ -2,7 +2,7 @@
 
 Chunkr's hosted API shuts down on **November 15, 2026**. Your Chunkr API key will not work anywhere else, and your documents and task outputs are not migrated. Download any outputs you need before then. Source: [Chunkr's FAQ](https://docs.chunkr.ai/pages/migrate-to-extend/faq).
 
-Parse gives you a Chunkr-compatible API on **your own** Modal account. It runs NVIDIA Nemotron 3.5 Parse on an H100 and scales to zero when idle. To run it in your own cloud or data center instead, use the Docker image ([below](#run-it-on-your-own-gpu-with-docker)). Your code keeps using Chunkr's own Python client. Only the base URL and the key change.
+Parse gives you a Chunkr-compatible API on **your own** Modal account. It runs NVIDIA Nemotron 3.5 Parse on an H100, and the GPU shuts down when idle. To run it in your own cloud or data center instead, use the Docker image ([below](#run-it-on-your-own-gpu-with-docker)). Your code keeps using Chunkr's own Python client. Only the base URL and the key change.
 
 ## 1. Deploy (about 5 minutes)
 
@@ -100,9 +100,9 @@ python examples/chunkr_client_check.py --url <your API URL> --key <your key> exa
 | Later calls | 8 s for a one-page scan; 35 s for 160 pages; 45 s for 252 pages |
 | Throughput | 4.6-5.7 pages/s for one document through the API; the batch `deltaparse gpu` command reaches 12.2 pages/s |
 | Cost | about $0.22-0.28 per 1,000 pages, plus about $0.17 per cold start and $0.38 for the 5 idle minutes before shutdown |
-| Idle cost | none after those 5 minutes: the GPU shuts down 5 minutes after the last request |
+| Idle cost | about $5 a month: the GPU shuts down 5 minutes after the last request, and one small CPU container stays up to answer the API |
 
-Costs use Modal's list prices: H100 at $0.001097/s, plus 8 CPU cores and 32 GiB of memory, which comes to about $0.00127/s (about $4.58/hour) while the container runs.
+Costs use Modal's list prices: H100 at $0.001097/s, plus 8 CPU cores and 32 GiB of memory, which comes to about $0.00127/s (about $4.58/hour) while the container runs. The API container (0.125 CPU cores, at $0.0000131 per core-second plus memory) stays up all the time. Without it, the first request after an idle period takes about 7.5 s while the container starts, and Chunkr's 0.3.x client gives up after 5 s.
 
 ## Field mapping
 
