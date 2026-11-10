@@ -81,13 +81,16 @@ python examples/chunkr_client_check.py --url <your API URL> --key <your key> exa
 
 ## 3. What to expect
 
-| | Measured on `sample.pdf` and `scanned_sample.pdf` |
+| | Measured through the API (sample PDFs and 160- and 252-page 10-K filings) |
 |---|---|
-| First call after idle | about 2.5 minutes while the H100 and vLLM start (136 s measured) |
-| Later calls | 8 s for a one-page scan, end to end |
-| Throughput | 12.2 pages/s on one H100 in bulk |
-| Cost | about $0.15-0.35 per 1,000 pages, plus about $0.19 per cold start |
-| Idle cost | none: the GPU shuts down 5 minutes after the last request |
+| First deploy | about 12 minutes on a fresh checkout while Modal builds the images (703 s measured); later deploys are faster |
+| First call after idle | about 2.5 minutes while the H100 and vLLM start (135 s measured) |
+| Later calls | 8 s for a one-page scan; 35 s for 160 pages; 45 s for 252 pages |
+| Throughput | 4.6-5.7 pages/s for one document through the API; the batch `deltaparse gpu` command reaches 12.2 pages/s |
+| Cost | about $0.22-0.28 per 1,000 pages, plus about $0.17 per cold start and $0.38 for the 5 idle minutes before shutdown |
+| Idle cost | none after those 5 minutes: the GPU shuts down 5 minutes after the last request |
+
+Costs use Modal's list prices: H100 at $0.001097/s, plus 8 CPU cores and 32 GiB of memory, which comes to about $0.00127/s (about $4.58/hour) while the container runs.
 
 ## Field mapping
 
