@@ -54,6 +54,8 @@ deltaparse keys revoke acme
 deltaparse usage                  # tasks and pages parsed per customer
 ```
 
+All customers share one deployment: the same URL, GPU and task store. Their keys keep their tasks apart. A customer who needs their own GPU and storage can deploy Parse on their own Modal account with `deltaparse deploy`.
+
 To delete tasks automatically, add `DELTAPARSE_DEFAULT_EXPIRES_IN=<seconds>` to the `deltaparse-api-key` secret. A request can still set its own `expires_in`, and an hourly job removes expired tasks.
 
 It serves both generations of Chunkr's Python client (`chunkr-ai` 0.3.x and 0.1.0aN). Point either one at the printed URL with your key, and your code does not change. The [migration guide](docs/migrate-from-chunkr.md) covers setup, the field mapping and the known gaps. [docs/chunkr_api_reference.md](docs/chunkr_api_reference.md) records Chunkr's API as it was before the shutdown.
