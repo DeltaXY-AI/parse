@@ -119,6 +119,12 @@ To also run Chunkr's own client against a local server, install it first (`pip i
 
 Early and pre-1.0. Expect breaking changes. Bugs and requests go in [GitHub Issues](https://github.com/DeltaXY-AI/parse/issues).
 
+## Built by DeltaXY
+
+Parse is built by [DeltaXY](https://deltaxy.ai), which makes document AI for regulated industries.
+
+Want Parse running in your own cloud with support? Contact Satish at [satish@deltaxy.ai](mailto:satish@deltaxy.ai).
+
 ## License
 
 Parse's code is licensed under the [Apache License 2.0](LICENSE). Models have their own licenses: Nemotron 3.5 Parse is under OpenMDW-1.1. See [NOTICE](NOTICE). To contribute, see [CONTRIBUTING.md](CONTRIBUTING.md).
