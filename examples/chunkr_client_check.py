@@ -62,8 +62,9 @@ def main() -> None:
     gen = sdk_generation()
     t = time.time()
     res = (run_v2 if gen == "v2" else run_v1)(a.url.rstrip("/"), a.key, a.pdf)
-    print(f"chunkr-ai {gen} client: {res['status']} in {time.time() - t:.0f}s, "
+    print(f"chunkr-ai {gen} client: {res['status']} in {time.time() - t:.1f}s, "
           f"{len(res['segments'])} segments {sorted(set(res['segments']))}")
+    print(f"task {res['task_id']} (hosted: `deltaparse timings {res['task_id']}` for each step)")
     print("--- markdown (first 800 chars) ---")
     print(res["markdown"][:800])
 
