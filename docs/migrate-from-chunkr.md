@@ -97,7 +97,7 @@ python examples/chunkr_client_check.py --url <your API URL> --key <your key> exa
 |---|---|
 | First deploy | about 12 minutes on a fresh checkout while Modal builds the images (703 s measured); later deploys are faster |
 | First call after idle | 12-16 s end to end from India (11.4, 12.4 and 16.0 s measured): the H100 container restores vLLM from a GPU memory snapshot, about 5-7 s to get a GPU and 0.4 s to wake vLLM. The task message says `Starting GPU (about N s)` meanwhile. |
-| First cold starts after a deploy | about 3 minutes each (157 s to boot vLLM, plus queueing), for the first two or three: Modal builds the snapshot from them. Make those calls yourself before customers arrive, stopping the GPU container between them (`modal container stop --yes <id>`). |
+| First cold starts after a deploy | about 3 minutes each (157-228 s to boot vLLM, plus queueing) for the 2-3 that Modal turns into snapshots, one per kind of machine; a new one can come after restores have started. Make cold calls yourself before customers arrive, stopping the GPU container after each (`modal container stop --yes <id>`), until the system logs show only restores. |
 | Later calls, one-page scan | 2-3 s from the US, 3-4 s from Europe, 4-5 s from India (Chunkr's own clients, `examples/region_check.py`) |
 | Later calls, long documents | 35 s for 160 pages; 45 s for 252 pages (measured before the November 2026 speed work) |
 | Throughput | 4.6-5.7 pages/s for one document through the API; the batch `deltaparse gpu` command reaches 12.2 pages/s |

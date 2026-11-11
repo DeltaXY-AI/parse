@@ -60,7 +60,7 @@ All customers share one deployment: the same URL, GPU and task store. Their keys
 
 While a task runs, its `message` says what is happening: `Starting GPU (about 10 s)` (from measured cold starts), `Parsing page 3 of 12`, `Saving result`. The status values stay Chunkr's. `POST /warm` (once per customer every 5 minutes) starts the GPU before the first file arrives. To time calls from several regions with Chunkr's own clients, run `modal run examples/region_check.py --url <url> --key <key>`.
 
-After each deploy, Modal builds the GPU memory snapshot during the first two or three cold starts, and those take about 3 minutes each. Before customers call a new deploy, make three calls yourself and stop the GPU container between them (`modal container list`, then `modal container stop --yes <id>`).
+After each deploy, Modal takes 2-3 GPU memory snapshots, one per kind of machine the GPU lands on, and each takes a full cold start of about 3 minutes. A new one can come even after restores have started. Before customers call a new deploy, make cold calls yourself, stopping the GPU container after each (`modal container list`, then `modal container stop --yes <id>`), until `modal app logs --source system` shows several restores in a row and no new `Creating GPU memory snapshot`.
 
 To delete tasks automatically, add `DELTAPARSE_DEFAULT_EXPIRES_IN=<seconds>` to the `deltaparse-api-key` secret. A request can still set its own `expires_in`, and an hourly job removes expired tasks.
 
