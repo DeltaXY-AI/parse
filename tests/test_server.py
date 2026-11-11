@@ -14,7 +14,7 @@ from deltaparse.server import create_app  # noqa: E402
 KEY = "test-key"
 
 
-def fake_parse(pdf: bytes) -> list[dict]:
+def fake_parse(pdf: bytes, progress=None) -> list[dict]:
     """Stand-in for the H100: PyMuPDF text blocks as Nemotron-style blocks."""
     pages = render_pdf(pdf)
     with pymupdf.open(stream=pdf, filetype="pdf") as doc:
@@ -39,10 +39,8 @@ class FakeRunner:
             rec.update(status="Succeeded", message="Task succeeded", page_count=len(pages),
                        output=build_output(pages, file_name, config), finished_at="2026-11-10T00:00:00+00:00")
             self.store[task_id] = rec
-        return f"call-{task_id}"
-
-    def cancel(self, call_id):
-        self.cancelled.append(call_id)
+    def cancel(self, task_id):
+        self.cancelled.append(task_id)
 
 
 @pytest.fixture
@@ -133,7 +131,7 @@ def test_cancel_only_while_running_and_delete_only_when_finished(sample_pdf):
 
     assert client.delete(f"/tasks/{tid}", headers=AUTH).status_code == 400  # still running
     assert client.get(f"/tasks/{tid}/cancel", headers=AUTH).json()["status"] == "Cancelled"
-    assert runner.cancelled == [f"call-{tid}"]
+    assert runner.cancelled == [tid]
     assert client.get(f"/tasks/{tid}/cancel", headers=AUTH).status_code == 400  # already finished
     assert client.delete(f"/tasks/{tid}", headers=AUTH).status_code == 200
     assert client.get(f"/tasks/{tid}", headers=AUTH).status_code == 404

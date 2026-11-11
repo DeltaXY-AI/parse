@@ -96,13 +96,15 @@ python examples/chunkr_client_check.py --url <your API URL> --key <your key> exa
 | | Measured through the API (sample PDFs and 160- and 252-page 10-K filings) |
 |---|---|
 | First deploy | about 12 minutes on a fresh checkout while Modal builds the images (703 s measured); later deploys are faster |
-| First call after idle | about 2.5 minutes while the H100 and vLLM start (135 s measured) |
-| Later calls | 8 s for a one-page scan; 35 s for 160 pages; 45 s for 252 pages |
+| First call after idle | 12-16 s end to end from India (11.4, 12.4 and 16.0 s measured): the H100 container restores vLLM from a GPU memory snapshot, about 5-7 s to get a GPU and 0.4 s to wake vLLM. The task message says `Starting GPU (about N s)` meanwhile. |
+| First cold starts after a deploy | about 3 minutes each (157-228 s to boot vLLM, plus queueing) for the 2-3 that Modal turns into snapshots, one per kind of machine; a new one can come after restores have started. Make cold calls yourself before customers arrive, stopping the GPU container after each (`modal container stop --yes <id>`), until the system logs show only restores. |
+| Later calls, one-page scan | 2-3 s from the US, 3-4 s from Europe, 4-5 s from India (Chunkr's own clients, `examples/region_check.py`) |
+| Later calls, long documents | 35 s for 160 pages; 45 s for 252 pages (measured before the November 2026 speed work) |
 | Throughput | 4.6-5.7 pages/s for one document through the API; the batch `deltaparse gpu` command reaches 12.2 pages/s |
-| Cost | about $0.22-0.28 per 1,000 pages, plus about $0.17 per cold start and $0.38 for the 5 idle minutes before shutdown |
-| Idle cost | about $5 a month: the GPU shuts down 5 minutes after the last request, and one small CPU container stays up to answer the API |
+| Cost | about $0.22-0.28 per 1,000 pages, plus about $0.02 per cold start (about $0.20 for each of the first ones after a deploy) and $0.38 for the 5 idle minutes before shutdown |
+| Idle cost | about $8 a month: the GPU shuts down 5 minutes after the last request, and one small CPU container stays up to answer the API |
 
-Costs use Modal's list prices: H100 at $0.001097/s, plus 8 CPU cores and 32 GiB of memory, which comes to about $0.00127/s (about $4.58/hour) while the container runs. The API container (0.125 CPU cores, at $0.0000131 per core-second plus memory) stays up all the time. Without it, the first request after an idle period takes about 7.5 s while the container starts, and Chunkr's 0.3.x client gives up after 5 s.
+Costs use Modal's list prices: H100 at $0.001097/s, plus 8 CPU cores and 32 GiB of memory, which comes to about $0.00127/s (about $4.58/hour) while the container runs. The API container (0.125 CPU cores, at $0.0000131 per core-second plus memory) stays up all the time. It is pinned to `us-east`, next to Modal's ingress and the task store, which costs 1.75x Modal's base price (about $3 a month more) but cuts each store call from about 220 ms to 25 ms. Without it, the first request after an idle period takes about 7.5 s while the container starts, and Chunkr's 0.3.x client gives up after 5 s.
 
 ## Field mapping
 

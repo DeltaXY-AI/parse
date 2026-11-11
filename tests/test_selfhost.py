@@ -68,7 +68,8 @@ def test_tasks_wait_for_vllm_and_can_be_cancelled_while_waiting(tmp_path, sample
         keep = client.post("/api/v1/task/parse", headers=AUTH, json={"file": b64(sample_pdf)}).json()["task_id"]
         drop = client.post("/api/v1/task/parse", headers=AUTH, json={"file": b64(sample_pdf)}).json()["task_id"]
         time.sleep(0.2)
-        assert client.get(f"/api/v1/task/{keep}", headers=AUTH).json()["status"] == "Processing"
+        waiting = client.get(f"/api/v1/task/{keep}", headers=AUTH).json()
+        assert waiting["status"] == "Starting" and waiting["message"].startswith("Starting GPU")
         assert client.get(f"/api/v1/task/{drop}/cancel", headers=AUTH).json()["status"] == "Cancelled"
         ready.set()
         assert client.get("/ready").json() == {"ready": True}

@@ -80,6 +80,34 @@ def _usage(a: argparse.Namespace) -> int:
     return 0
 
 
+TIMING_COLUMNS = ("queued_s", "boot_s", "wake_s", "render_s", "parse_s", "save_s", "total_s")
+
+
+def _timings(a: argparse.Namespace) -> int:
+    # Seconds per step of hosted tasks, kept after the task itself is deleted.
+    from deltaparse.api import TIMINGS
+
+    store = _modal_dict(TIMINGS)
+    if a.task_id:
+        row = store.get(a.task_id)
+        if row is None:
+            print(f"no timings for task {a.task_id}", file=sys.stderr)
+            return 1
+        for k, v in row.items():
+            print(f"{k}\t{v}")
+        return 0
+    rows = sorted(store.values(), key=lambda r: r.get("created_at") or "")[-a.last:]
+    print("created_at\tpages\tcold\t" + "\t".join(TIMING_COLUMNS) + "\ttask_id")
+    for r in rows:
+        cells = [str(r.get(c, "")) for c in TIMING_COLUMNS]
+        cold = ("cold (snapshot)" if r.get("restored") else "cold") if r.get("cold") else "warm"
+        print(f"{(r.get('created_at') or '')[:19]}\t{r.get('pages')}\t{cold}\t" + "\t".join(cells)
+              + f"\t{r['task_id']}")
+    if not rows:
+        print("no timings yet")
+    return 0
+
+
 def _view(a: argparse.Namespace) -> None:
     from deltaparse.viewer import rebuild
 
@@ -126,6 +154,11 @@ def build_parser() -> argparse.ArgumentParser:
 
     p = sub.add_parser("usage", help="pages parsed per customer on a hosted deployment")
     p.set_defaults(func=_usage)
+
+    p = sub.add_parser("timings", help="seconds per step of recent tasks on a hosted deployment")
+    p.add_argument("task_id", nargs="?", help="one task (default: the most recent tasks)")
+    p.add_argument("--last", type=int, default=15, help="how many recent tasks to list")
+    p.set_defaults(func=_timings)
 
     p = sub.add_parser("view", help="rebuild the HTML viewer from a saved JSON file")
     p.add_argument("json", type=Path, help="<name>.json written by a backend")

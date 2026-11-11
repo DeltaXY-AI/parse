@@ -1,3 +1,4 @@
+import pytest
 from deltaparse.pdf import batch_by_pages, collect_pdfs, render_pdf
 
 
@@ -36,3 +37,22 @@ def test_batch_by_pages_groups_and_skips_unreadable(tmp_path, sample_pdf, blank_
     # 1 page + 2 pages reaches the target of 2, then the last 1-page PDF starts a new batch
     assert batches == [[sample_pdf, blank_then_text_pdf], [sample_pdf]]
     assert "skip unreadable broken.pdf" in capsys.readouterr().out
+
+
+def test_render_without_view_skips_the_jpg(sample_pdf):
+    from deltaparse.pdf import render_pdf
+
+    page = render_pdf(sample_pdf.read_bytes(), view=False)[0]
+    assert page["jpg"] is None and page["png"]
+
+
+def test_fast_png_has_exactly_the_same_pixels(sample_pdf):
+    pytest.importorskip("PIL")
+    import pymupdf
+
+    from deltaparse.pdf import render_pdf
+
+    slow = render_pdf(sample_pdf.read_bytes())[0]["png"]
+    fast = render_pdf(sample_pdf.read_bytes(), fast_png=True)[0]["png"]
+    a, b = pymupdf.Pixmap(slow), pymupdf.Pixmap(fast)
+    assert (a.width, a.height, a.n) == (b.width, b.height, b.n) and a.samples == b.samples

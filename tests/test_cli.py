@@ -31,7 +31,7 @@ def test_cli_requires_a_command(capsys):
 
 def test_cli_lists_only_current_commands():
     sub = next(a for a in cli.build_parser()._actions if a.dest == "command")
-    assert sorted(sub.choices) == ["deploy", "gpu", "keys", "odr", "sample", "serve", "usage", "view"]
+    assert sorted(sub.choices) == ["deploy", "gpu", "keys", "odr", "sample", "serve", "timings", "usage", "view"]
 
 
 def test_cli_keys_and_usage_use_the_hosted_stores(monkeypatch, capsys):

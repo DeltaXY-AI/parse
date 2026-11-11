@@ -14,7 +14,7 @@ It is for developers who feed documents to search, RAG or LLM pipelines and want
 
 | | Command | When to use | Measured |
 |---|---|---|---|
-| **Chunkr-compatible API** on your Modal account (H100) | `deltaparse deploy` | Apps that call an API; Chunkr users | first call about 2.5 min (cold start), then 8 s for a one-page scan; the GPU shuts down when idle (about $5 a month idle cost) |
+| **Chunkr-compatible API** on your Modal account (H100) | `deltaparse deploy` | Apps that call an API; Chunkr users | first call after idle 12-16 s (the GPU restores from a memory snapshot), then 2-3 s for a one-page scan from the US, 3-4 s from Europe, 4-5 s from India; the GPU shuts down when idle (about $8 a month idle cost) |
 | **Chunkr-compatible API** on your own GPU (Docker, H100) | `docker run --gpus all ...` | Your own cloud or data center | ready about 2 min after start, then 2 s for a one-page task ([docs/docker.md](docs/docker.md)) |
 | **Batch** on your own GPU (Modal + vLLM, H100) | `deltaparse gpu` | Bulk runs, private documents | 12.2 pages/s, about $0.15-0.35 per 1,000 pages, about 2.5 min startup |
 | **Hosted** (OpenDocRouter) | `deltaparse odr` | No GPU account, small jobs | 208 pages in 109 s, $1.09 per 1,000 pages, 0 failures |
@@ -53,9 +53,14 @@ deltaparse keys add acme          # prints a new key for "acme", shown once
 deltaparse keys list
 deltaparse keys revoke acme
 deltaparse usage                  # tasks and pages parsed per customer
+deltaparse timings                # seconds per step of recent tasks (cold or warm)
 ```
 
 All customers share one deployment: the same URL, GPU and task store. Their keys keep their tasks apart. A customer who needs their own GPU and storage can deploy Parse on their own Modal account with `deltaparse deploy`.
+
+While a task runs, its `message` says what is happening: `Starting GPU (about 10 s)` (from measured cold starts), `Parsing page 3 of 12`, `Saving result`. The status values stay Chunkr's. `POST /warm` (once per customer every 5 minutes) starts the GPU before the first file arrives. To time calls from several regions with Chunkr's own clients, run `modal run examples/region_check.py --url <url> --key <key>`.
+
+After each deploy, Modal takes 2-3 GPU memory snapshots, one per kind of machine the GPU lands on, and each takes a full cold start of about 3 minutes. A new one can come even after restores have started. Before customers call a new deploy, make cold calls yourself, stopping the GPU container after each (`modal container list`, then `modal container stop --yes <id>`), until `modal app logs --source system` shows several restores in a row and no new `Creating GPU memory snapshot`.
 
 To delete tasks automatically, add `DELTAPARSE_DEFAULT_EXPIRES_IN=<seconds>` to the `deltaparse-api-key` secret. A request can still set its own `expires_in`, and an hourly job removes expired tasks.
 

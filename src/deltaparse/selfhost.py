@@ -16,11 +16,13 @@ import json
 import os
 import re
 import threading
+import time
 from collections.abc import Iterator, MutableMapping
 from concurrent.futures import Future, ThreadPoolExecutor
 from pathlib import Path
 
 SAFE_ID = re.compile(r"^[A-Za-z0-9_-]{1,128}$")
+COLD_START_S = 130  # measured vLLM start on an H100 with this image; the hint counts down from it
 UNFINISHED = ("Starting", "Processing")
 
 
@@ -95,42 +97,51 @@ class ThreadRunner:
         self.error: str | None = None  # set if the GPU backend could not start
         self.pool = ThreadPoolExecutor(workers, thread_name_prefix="task")
         self.futures: dict[str, Future] = {}
+        self.timings: dict[str, dict] = {}  # per-step seconds of recent tasks (in memory)
+        self.started = time.monotonic()
+        self.cold_start_s = COLD_START_S
 
-    def _parse(self, pdf: bytes) -> list[dict]:
-        self.ready.wait()
+    def queued_message(self) -> str:
+        if self.ready.is_set():
+            return "Task queued"
+        left = max(5, int(self.cold_start_s - (time.monotonic() - self.started)))
+        return f"Starting GPU (about {left} s)"
+
+    def _parse(self, pdf: bytes, progress) -> list[dict]:
         if self.error:
             raise RuntimeError("the GPU backend failed to start: " + self.error)
-        return self.parse(pdf)
+        return self.parse(pdf, progress)
 
     def _run(self, task_id: str, pdf: bytes, file_name: str, config: dict) -> None:
         from deltaparse.server import run_task
 
         try:
-            run_task(self.store, task_id, pdf, file_name, config, self._parse)
+            self.ready.wait()  # the task stays "Starting GPU" until vLLM is up
+            run_task(self.store, task_id, pdf, file_name, config, self._parse, timings=self.timings)
         finally:
             self.futures.pop(task_id, None)
 
-    def start(self, task_id: str, pdf: bytes, file_name: str, config: dict) -> str:
+    def start(self, task_id: str, pdf: bytes, file_name: str, config: dict) -> None:
         self.futures[task_id] = self.pool.submit(self._run, task_id, pdf, file_name, config)
-        return task_id
 
-    def cancel(self, call_id: str) -> None:
+    def cancel(self, task_id: str) -> None:
         # A queued task never starts; a running one finishes on the GPU, but run_task keeps
         # the Cancelled status and drops the result.
-        fut = self.futures.get(call_id)
+        fut = self.futures.get(task_id)
         if fut:
             fut.cancel()
 
 
 def build(data_dir: str, api_key: str, parse, ready: threading.Event | None = None,
-          default_expires_in: int | None = None, workers: int = 4):
+          default_expires_in: int | None = None, workers: int = 4, poll_hold: float = 0.0):
     """The FastAPI app plus its runner (split out so tests can use a fake parse)."""
     from deltaparse.server import create_app
 
     store = DirStore(data_dir)
     fail_interrupted(store)
     runner = ThreadRunner(store, parse, workers=workers, ready=ready)
-    app = create_app(store, runner, api_key=api_key, default_expires_in=default_expires_in)
+    app = create_app(store, runner, api_key=api_key, default_expires_in=default_expires_in,
+                     queued_message=runner.queued_message, poll_hold=poll_hold)
 
     def is_ready():
         from fastapi.responses import JSONResponse
@@ -171,11 +182,15 @@ def serve(host: str = "0.0.0.0", port: int = 8000) -> int:
     expires = int(os.environ.get("DELTAPARSE_DEFAULT_EXPIRES_IN") or 0) or None
     ready = threading.Event()
 
-    def parse(pdf: bytes) -> list[dict]:
-        return engine.parse_pdfs([pdf], mode="single", dpi=150, port=vllm_port)["pdfs"][0]
+    def parse(pdf: bytes, progress) -> list[dict]:
+        res = engine.parse_pdfs([pdf], mode="single", dpi=150, port=vllm_port, progress=progress.pages,
+                                view=False)
+        m = res["metrics"]
+        progress.timing(render_s=m.get("render_seconds"), parse_s=m.get("parse_seconds"))
+        return res["pdfs"][0]
 
     app, runner, store = build(os.environ.get("DELTAPARSE_DATA_DIR", "/data"), api_key, parse,
-                               ready=ready, default_expires_in=expires)
+                               ready=ready, default_expires_in=expires, poll_hold=2.0)
 
     def start_gpu():
         try:
